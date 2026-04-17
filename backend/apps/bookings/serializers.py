@@ -11,6 +11,19 @@ class BookingSerializer(serializers.ModelSerializer):
     """Read booking; nested room summary."""
 
     room_detail = RoomSerializer(source='room', read_only=True)
+    hotel_id = serializers.IntegerField(source='room.hotel_id', read_only=True)
+    hotel_name = serializers.CharField(
+        source='room.hotel.name',
+        read_only=True,
+    )
+    city_name = serializers.CharField(
+        source='room.hotel.city.name',
+        read_only=True,
+    )
+    country_name = serializers.CharField(
+        source='room.hotel.city.country.name',
+        read_only=True,
+    )
 
     class Meta:
         model = Booking
@@ -19,6 +32,10 @@ class BookingSerializer(serializers.ModelSerializer):
             'user',
             'room',
             'room_detail',
+            'hotel_id',
+            'hotel_name',
+            'city_name',
+            'country_name',
             'check_in',
             'check_out',
             'status',

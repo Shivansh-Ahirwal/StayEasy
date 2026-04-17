@@ -30,6 +30,9 @@ export default function ManagerDashboardPage() {
   const [hotelImgCaption, setHotelImgCaption] = useState('');
   const [roomImgUrl, setRoomImgUrl] = useState({});
   const [roomImgCaption, setRoomImgCaption] = useState({});
+  const [newRoomType, setNewRoomType] = useState('');
+  const [newRoomPrice, setNewRoomPrice] = useState('');
+  const [newRoomTotal, setNewRoomTotal] = useState('1');
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(null);
   const [hotelsLoaded, setHotelsLoaded] = useState(false);
@@ -114,6 +117,34 @@ export default function ManagerDashboardPage() {
           (typeof body === 'object'
             ? JSON.stringify(body)
             : e.message),
+      );
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const createRoom = async (e) => {
+    e.preventDefault();
+    if (!hotelId) return;
+    setBusy('new-room');
+    setErr('');
+    try {
+      const payload = {
+        hotel: hotelId,
+        type: newRoomType.trim(),
+        price: newRoomPrice,
+        total_rooms: parseInt(newRoomTotal, 10),
+      };
+      await api.post('/rooms/', payload);
+      setNewRoomType('');
+      setNewRoomPrice('');
+      setNewRoomTotal('1');
+      await loadDetail(hotelId);
+    } catch (e) {
+      const body = e.response?.data;
+      setErr(
+        body?.detail
+          || (typeof body === 'object' ? JSON.stringify(body) : e.message),
       );
     } finally {
       setBusy(null);
@@ -403,6 +434,64 @@ export default function ManagerDashboardPage() {
       <h2 style={{ fontSize: '1.15rem', marginBottom: '0.75rem' }}>
         Rooms, pricing & availability
       </h2>
+      <div className="panel" style={{ marginBottom: '1rem' }}>
+        <div style={{ fontWeight: 700, marginBottom: '0.75rem' }}>
+          Add a room type
+        </div>
+        <form
+          onSubmit={createRoom}
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fill, minmax(10rem, 1fr))',
+            gap: '0.75rem',
+            alignItems: 'end',
+          }}
+        >
+          <label style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+            <span className="muted" style={{ fontSize: '0.8rem' }}>Label</span>
+            <input
+              className="search-input"
+              value={newRoomType}
+              onChange={(e) => setNewRoomType(e.target.value)}
+              placeholder="e.g. Deluxe"
+              required
+            />
+          </label>
+          <label style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+            <span className="muted" style={{ fontSize: '0.8rem' }}>Price (Rs.)</span>
+            <input
+              className="search-input"
+              type="number"
+              min="0"
+              step="0.01"
+              value={newRoomPrice}
+              onChange={(e) => setNewRoomPrice(e.target.value)}
+              required
+            />
+          </label>
+          <label style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+            <span className="muted" style={{ fontSize: '0.8rem' }}>
+              Total rooms
+            </span>
+            <input
+              className="search-input"
+              type="number"
+              min="0"
+              step="1"
+              value={newRoomTotal}
+              onChange={(e) => setNewRoomTotal(e.target.value)}
+              required
+            />
+          </label>
+          <button
+            type="submit"
+            className="btn-search"
+            disabled={busy === 'new-room'}
+          >
+            {busy === 'new-room' ? 'Adding…' : 'Add'}
+          </button>
+        </form>
+      </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
         {(detail?.rooms ?? []).map((r) => {
           const d = roomDrafts[r.id] || {

@@ -32,7 +32,9 @@ class HotelViewSet(viewsets.ModelViewSet):
     pagination_class = HotelSearchPagination
 
     def get_permissions(self):
-        if self.action in ('create', 'update', 'partial_update', 'destroy'):
+        if self.action == 'create':
+            return [permissions.IsAuthenticated()]
+        if self.action in ('update', 'partial_update', 'destroy'):
             return [permissions.IsAuthenticated(), IsManager()]
         return [permissions.AllowAny()]
 
@@ -61,7 +63,11 @@ class HotelViewSet(viewsets.ModelViewSet):
         return qs.order_by('name', 'pk')
 
     def perform_create(self, serializer):
-        serializer.save(manager=self.request.user)
+        user = self.request.user
+        if user.role == User.Role.USER:
+            user.role = User.Role.MANAGER
+            user.save(update_fields=['role'])
+        serializer.save(manager=user)
 
     def perform_update(self, serializer):
         hotel = serializer.instance
@@ -103,7 +109,9 @@ class RoomViewSet(viewsets.ModelViewSet):
     serializer_class = RoomSerializer
 
     def get_permissions(self):
-        if self.action in ('create', 'update', 'partial_update', 'destroy'):
+        if self.action == 'create':
+            return [permissions.IsAuthenticated()]
+        if self.action in ('update', 'partial_update', 'destroy'):
             return [permissions.IsAuthenticated(), IsManager()]
         return [permissions.AllowAny()]
 

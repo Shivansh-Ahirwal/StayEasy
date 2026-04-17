@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useMemo, useState } from 'react';
+import React, { createContext, useCallback, useContext, useMemo, useState } from 'react';
 import { api, setAuthToken } from '../services/api';
 
 const AuthContext = createContext(null);
@@ -19,12 +19,20 @@ export function AuthProvider({ children }) {
   const [tokens, setTokens] = useState(() => loadStored());
   const [user, setUser] = useState(null);
 
+  const refreshMe = useCallback(async () => {
+    if (!tokens?.access) {
+      setUser(null);
+      return null;
+    }
+    const me = await api.get('/auth/me/');
+    setUser(me.data);
+    return me.data;
+  }, [tokens?.access]);
+
   React.useEffect(() => {
     if (tokens?.access) {
       setAuthToken(tokens.access);
-      api
-        .get('/auth/me/')
-        .then((r) => setUser(r.data))
+      refreshMe()
         .catch(() => {
           setUser(null);
           setTokens(null);
@@ -66,9 +74,10 @@ export function AuthProvider({ children }) {
       login,
       register,
       logout,
+      refreshMe,
       isAuthenticated: Boolean(tokens?.access),
     }),
-    [user, tokens],
+    [user, tokens, refreshMe],
   );
 
   return (
