@@ -4106,6 +4106,11 @@ a:hover {
   flex-wrap: wrap;
   margin-bottom: 1.5rem;
 }
+.mgr-topbar__right {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
 .mgr-topbar__title {
   font-size: 1.55rem;
   font-weight: 800;
@@ -4372,6 +4377,7 @@ a:hover {
 .mgr-btn--outline { background: #fff; color: var(--oyo-red); border-color: var(--oyo-red); }
 .mgr-btn--outline:hover:not(:disabled) { background: var(--oyo-red-soft, #fff5f5); }
 .mgr-btn--sm { padding: 0.35rem 0.75rem; font-size: 0.8rem; }
+.mgr-btn--topbar { padding: 0.4rem 0.9rem; font-size: 0.8rem; border-radius: 6px; }
 .mgr-btn--form { align-self: end; }
 
 /* ── Rooms grid ── */
@@ -4921,4 +4927,38 @@ a:hover {
 @media (max-width: 768px) {
   .site-header__links--desktop { display: none !important; }
   .site-header__mobile-right   { display: flex; }
+}
+
+/* ── Search results — infinite scroll ── */
+.sr-sentinel {
+  height: 1px;
+  margin-top: 1rem;
+}
+.sr-load-more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  padding: 1.5rem 0;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+.sr-load-more--end {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  border-top: 1px solid var(--border);
+  margin-top: 0.5rem;
+}
+.sr-load-more__spinner {
+  display: inline-block;
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--border);
+  border-top-color: var(--oyo-red);
+  border-radius: 50%;
+  animation: sr-spin 0.7s linear infinite;
+  flex-shrink: 0;
+}
+@keyframes sr-spin {
+  to { transform: rotate(360deg); }
 }

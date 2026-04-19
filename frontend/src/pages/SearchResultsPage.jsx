@@ -109,8 +109,12 @@ export default function SearchResultsPage() {
 
   const [hotels, setHotels] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
+  const [nextPage, setNextPage] = useState(2);
   const [err, setErr] = useState('');
   const [mapOn, setMapOn] = useState(false);
+  const sentinelRef = useRef(null);
 
   // ── Location autocomplete ──
   const [suggestions, setSuggestions] = useState([]);
@@ -142,31 +146,56 @@ export default function SearchResultsPage() {
 
   const searchKey = searchParams.toString();
 
+  // ── Initial fetch (100) on search change ──
   useEffect(() => {
     const params = new URLSearchParams(searchKey);
     const term = (params.get('q') || '').trim();
     let cancelled = false;
     setErr('');
     setLoading(true);
-    (async () => {
-      try {
-        const { data } = await api.get('/hotels/', {
-          params: { q: term || undefined, page_size: 100 },
-        });
-        if (!cancelled) setHotels(asList(data));
-      } catch (e) {
-        if (!cancelled) {
-          setErr(e.response?.data?.detail || e.message);
-          setHotels([]);
-        }
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
+    setHasMore(false);
+    setNextPage(2);
+    api.get('/hotels/', { params: { q: term || undefined, page_size: 100, page: 1 } })
+      .then(({ data }) => {
+        if (cancelled) return;
+        setHotels(asList(data));
+        setHasMore(Boolean(data.next));
+        setNextPage(2);
+      })
+      .catch((e) => {
+        if (!cancelled) { setErr(e.response?.data?.detail || e.message); setHotels([]); }
+      })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
   }, [searchKey]);
+
+  // ── Load more (20 at a time) ──
+  const loadMore = useCallback(() => {
+    if (loadingMore || !hasMore) return;
+    const params = new URLSearchParams(searchKey);
+    const term = (params.get('q') || '').trim();
+    setLoadingMore(true);
+    api.get('/hotels/', { params: { q: term || undefined, page_size: 20, page: nextPage } })
+      .then(({ data }) => {
+        setHotels((prev) => [...prev, ...asList(data)]);
+        setHasMore(Boolean(data.next));
+        setNextPage((p) => p + 1);
+      })
+      .catch((e) => setErr(e.response?.data?.detail || e.message))
+      .finally(() => setLoadingMore(false));
+  }, [searchKey, nextPage, hasMore, loadingMore]);
+
+  // ── IntersectionObserver on sentinel ──
+  useEffect(() => {
+    const el = sentinelRef.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => { if (entry.isIntersecting) loadMore(); },
+      { threshold: 0.1 },
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [loadMore]);
 
   const numericPrices = useMemo(() => {
     return hotels
@@ -626,6 +655,22 @@ export default function SearchResultsPage() {
                 />
               ))}
             </div>
+
+            {/* Sentinel — triggers next page when scrolled into view */}
+            {hasMore && <div ref={sentinelRef} className="sr-sentinel" />}
+
+            {loadingMore && (
+              <div className="sr-load-more">
+                <span className="sr-load-more__spinner" />
+                Loading more hotels…
+              </div>
+            )}
+
+            {!hasMore && !loading && hotels.length > 0 && (
+              <p className="sr-load-more sr-load-more--end">
+                All {hotels.length} properties loaded
+              </p>
+            )}
           </div>
         </div>
       </div>

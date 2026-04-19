@@ -291,6 +291,9 @@ export default function ManagerDashboardPage() {
               </option>
             ))}
           </select>
+          <Link to="/list-property" className="mgr-btn mgr-btn--primary mgr-btn--topbar">
+            + Add property
+          </Link>
         </div>
       </div>
 
