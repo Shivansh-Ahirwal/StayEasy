@@ -8,3 +8,4 @@ psycopg2-binary>=2.9,<3
 python-dotenv>=1.0,<2
 redis>=5.0,<8
 requests>=2.31,<3
+duckduckgo-search>=6.0,<8

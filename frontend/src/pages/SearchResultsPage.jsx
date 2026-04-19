@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { api } from '../services/api';
 import DateRangePickerField from '../components/DateRangePickerField';
@@ -111,6 +111,13 @@ export default function SearchResultsPage() {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState('');
   const [mapOn, setMapOn] = useState(false);
+
+  // ── Location autocomplete ──
+  const [suggestions, setSuggestions] = useState([]);
+  const [suggestOpen, setSuggestOpen] = useState(false);
+  const [highlight, setHighlight] = useState(-1);
+  const locWrapRef = useRef(null);
+  const abortRef = useRef(null);
   const [sortBy, setSortBy] = useState('popular');
   const [areaQuery, setAreaQuery] = useState('');
   const [activeChips, setActiveChips] = useState([]);
@@ -255,8 +262,74 @@ export default function SearchResultsPage() {
     [searchParams],
   );
 
+  useEffect(() => {
+    const term = q.trim();
+    if (term.length < 2) { setSuggestions([]); setHighlight(-1); return; }
+    abortRef.current?.abort();
+    const ac = new AbortController();
+    abortRef.current = ac;
+    const t = setTimeout(async () => {
+      try {
+        const [cRes, hRes] = await Promise.all([
+          api.get('/cities/', { params: { q: term }, signal: ac.signal }),
+          api.get('/hotels/', { params: { q: term }, signal: ac.signal }),
+        ]);
+        const cityRows = (cRes.data.results ?? cRes.data).slice(0, 8).map((c) => ({
+          kind: 'city', key: `c-${c.id}`, value: c.name,
+          primary: c.name, secondary: c.country?.name ?? '',
+        }));
+        const hotelRows = (hRes.data.results ?? hRes.data).slice(0, 6).map((h) => ({
+          kind: 'hotel', key: `h-${h.id}`, value: h.name,
+          primary: h.name,
+          secondary: h.city ? `${h.city.name}, ${h.city.country_name ?? ''}` : h.location ?? '',
+        }));
+        setSuggestions([...cityRows, ...hotelRows]);
+        setHighlight(-1);
+      } catch (e) {
+        if (e.name === 'CanceledError' || e.code === 'ERR_CANCELED') return;
+        setSuggestions([]);
+      }
+    }, 280);
+    return () => { clearTimeout(t); ac.abort(); };
+  }, [q]);
+
+  useEffect(() => {
+    const onDocDown = (e) => {
+      if (locWrapRef.current && !locWrapRef.current.contains(e.target)) {
+        setSuggestOpen(false);
+        setHighlight(-1);
+      }
+    };
+    document.addEventListener('mousedown', onDocDown);
+    return () => document.removeEventListener('mousedown', onDocDown);
+  }, []);
+
+  const applySuggestion = (item) => {
+    setQ(item.value);
+    setSuggestOpen(false);
+    setHighlight(-1);
+    setSuggestions([]);
+    const next = buildStaySearchParams({ q: item.value, checkIn, checkOut, roomGuestCounts });
+    setSearchParams(next);
+  };
+
+  const onLocKeyDown = (e) => {
+    if (!suggestOpen && suggestions.length > 0 && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
+      setSuggestOpen(true); return;
+    }
+    if (!suggestOpen || suggestions.length === 0) return;
+    if (e.key === 'ArrowDown') { e.preventDefault(); setHighlight((i) => (i + 1 >= suggestions.length ? 0 : i + 1)); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); setHighlight((i) => (i <= 0 ? suggestions.length - 1 : i - 1)); }
+    else if (e.key === 'Escape') { e.preventDefault(); setSuggestOpen(false); setHighlight(-1); }
+    else if (e.key === 'Enter' && highlight >= 0 && suggestions[highlight]) { e.preventDefault(); applySuggestion(suggestions[highlight]); }
+  };
+
+  const citySuggestions = suggestions.filter((s) => s.kind === 'city');
+  const hotelSuggestions = suggestions.filter((s) => s.kind === 'hotel');
+
   const onSearchSubmit = (e) => {
     e.preventDefault();
+    setSuggestOpen(false);
     const next = buildStaySearchParams({
       q,
       checkIn,
@@ -286,7 +359,7 @@ export default function SearchResultsPage() {
       <div className="sr-toolbar">
         <div className="sr-toolbar__inner">
           <form className="sr-search-form" onSubmit={onSearchSubmit}>
-            <div className="sr-search-form__loc">
+            <div className="sr-search-form__loc" ref={locWrapRef}>
               <label className="sr-search-form__mini-label" htmlFor="sr-q">
                 Location
               </label>
@@ -294,10 +367,66 @@ export default function SearchResultsPage() {
                 id="sr-q"
                 className="sr-search-form__input"
                 value={q}
-                onChange={(e) => setQ(e.target.value)}
+                onChange={(e) => { setQ(e.target.value); setSuggestOpen(true); }}
+                onFocus={() => { if (suggestions.length > 0) setSuggestOpen(true); }}
+                onKeyDown={onLocKeyDown}
                 placeholder="City, area or property"
                 autoComplete="off"
+                role="combobox"
+                aria-expanded={suggestOpen}
+                aria-controls="sr-loc-listbox"
+                aria-autocomplete="list"
               />
+              {suggestOpen && q.trim().length >= 2 && suggestions.length > 0 && (
+                <ul id="sr-loc-listbox" className="search-suggestions" role="listbox">
+                  {citySuggestions.length > 0 && (
+                    <>
+                      <li className="search-suggestions__label" role="presentation">Cities</li>
+                      {citySuggestions.map((item) => {
+                        const idx = suggestions.indexOf(item);
+                        return (
+                          <li key={item.key} role="presentation">
+                            <button
+                              type="button" role="option" aria-selected={highlight === idx}
+                              className={`search-suggestion${highlight === idx ? ' search-suggestion--active' : ''}`}
+                              onMouseEnter={() => setHighlight(idx)}
+                              onMouseDown={(ev) => ev.preventDefault()}
+                              onClick={() => applySuggestion(item)}
+                            >
+                              <span className="search-suggestion__tag">City</span>
+                              <span className="search-suggestion__primary">{item.primary}</span>
+                              {item.secondary && <div className="search-suggestion__secondary">{item.secondary}</div>}
+                            </button>
+                          </li>
+                        );
+                      })}
+                    </>
+                  )}
+                  {hotelSuggestions.length > 0 && (
+                    <>
+                      <li className="search-suggestions__label" role="presentation">Properties</li>
+                      {hotelSuggestions.map((item) => {
+                        const idx = suggestions.indexOf(item);
+                        return (
+                          <li key={item.key} role="presentation">
+                            <button
+                              type="button" role="option" aria-selected={highlight === idx}
+                              className={`search-suggestion${highlight === idx ? ' search-suggestion--active' : ''}`}
+                              onMouseEnter={() => setHighlight(idx)}
+                              onMouseDown={(ev) => ev.preventDefault()}
+                              onClick={() => applySuggestion(item)}
+                            >
+                              <span className="search-suggestion__tag">Stay</span>
+                              <span className="search-suggestion__primary">{item.primary}</span>
+                              {item.secondary && <div className="search-suggestion__secondary">{item.secondary}</div>}
+                            </button>
+                          </li>
+                        );
+                      })}
+                    </>
+                  )}
+                </ul>
+              )}
             </div>
             <div className="sr-search-form__dates">
               <span className="sr-search-form__mini-label">Dates</span>

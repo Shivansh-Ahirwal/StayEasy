@@ -2,9 +2,13 @@
 
 from django.urls import include, path
 from rest_framework.routers import DefaultRouter
-from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
+from rest_framework_simplejwt.views import (
+    TokenObtainPairView,
+    TokenRefreshView,
+)
 
 from apps.bookings.views import BookingViewSet
+from apps.chatbot.views import ChatView
 from apps.hotels.manager_views import (
     ManagerBookingCheckInView,
     ManagerBookingCheckOutView,
@@ -19,8 +23,12 @@ from apps.hotels.manager_views import (
 )
 from apps.hotels.views import HotelViewSet, RoomViewSet
 from apps.locations.views import CityViewSet, CountryViewSet
-from apps.payments.views import RazorpayCreateOrderView, RazorpayVerifyView
-from apps.users.views import MeView, RegisterView
+from apps.payments.views import (
+    RazorpayCreateOrderView,
+    RazorpayVerifyView,
+)
+from apps.reviews.views import HotelReviewListView
+from apps.users.views import ChangePasswordView, MeView, RegisterView
 
 router = DefaultRouter()
 router.register('countries', CountryViewSet, basename='country')
@@ -35,6 +43,11 @@ urlpatterns = [
     path('auth/refresh/', TokenRefreshView.as_view(), name='auth-refresh'),
     path('auth/me/', MeView.as_view(), name='auth-me'),
     path(
+        'auth/change-password/',
+        ChangePasswordView.as_view(),
+        name='auth-change-password',
+    ),
+    path(
         'payments/razorpay/create-order/',
         RazorpayCreateOrderView.as_view(),
         name='razorpay-create-order',
@@ -44,21 +57,45 @@ urlpatterns = [
         RazorpayVerifyView.as_view(),
         name='razorpay-verify',
     ),
-    path('manager/hotels/<int:hotel_pk>/bookings/', ManagerHotelBookingListView.as_view()),
+    path(
+        'hotels/<int:hotel_pk>/reviews/',
+        HotelReviewListView.as_view(),
+        name='hotel-reviews',
+    ),
+    path('chat/', ChatView.as_view(), name='chat'),
+    path(
+        'manager/hotels/<int:hotel_pk>/bookings/',
+        ManagerHotelBookingListView.as_view(),
+    ),
     path(
         'manager/hotels/<int:hotel_pk>/images/<int:image_pk>/',
         ManagerHotelImageDestroyView.as_view(),
     ),
-    path('manager/hotels/<int:hotel_pk>/images/', ManagerHotelImageCreateView.as_view()),
-    path('manager/hotels/<int:pk>/', ManagerHotelDetailView.as_view()),
+    path(
+        'manager/hotels/<int:hotel_pk>/images/',
+        ManagerHotelImageCreateView.as_view(),
+    ),
+    path(
+        'manager/hotels/<int:pk>/',
+        ManagerHotelDetailView.as_view(),
+    ),
     path('manager/hotels/', ManagerHotelListView.as_view()),
     path(
         'manager/rooms/<int:room_pk>/images/<int:image_pk>/',
         ManagerRoomImageDestroyView.as_view(),
     ),
-    path('manager/rooms/<int:room_pk>/images/', ManagerRoomImageCreateView.as_view()),
+    path(
+        'manager/rooms/<int:room_pk>/images/',
+        ManagerRoomImageCreateView.as_view(),
+    ),
     path('manager/rooms/<int:pk>/', ManagerRoomDetailView.as_view()),
-    path('manager/bookings/<int:pk>/check-in/', ManagerBookingCheckInView.as_view()),
-    path('manager/bookings/<int:pk>/check-out/', ManagerBookingCheckOutView.as_view()),
+    path(
+        'manager/bookings/<int:pk>/check-in/',
+        ManagerBookingCheckInView.as_view(),
+    ),
+    path(
+        'manager/bookings/<int:pk>/check-out/',
+        ManagerBookingCheckOutView.as_view(),
+    ),
     path('', include(router.urls)),
 ]

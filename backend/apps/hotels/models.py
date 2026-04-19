@@ -4,6 +4,29 @@ from django.conf import settings
 from django.db import models
 
 
+class Amenity(models.Model):
+    """A single property amenity (e.g. WiFi, Pool)."""
+
+    name = models.CharField(max_length=100, unique=True)
+    icon = models.CharField(
+        max_length=10,
+        blank=True,
+        help_text='Emoji icon displayed on the UI.',
+    )
+    category = models.CharField(
+        max_length=50,
+        blank=True,
+        help_text='Grouping label, e.g. "Connectivity", "Food".',
+    )
+
+    class Meta:
+        ordering = ['category', 'name']
+        verbose_name_plural = 'amenities'
+
+    def __str__(self) -> str:
+        return f'{self.icon} {self.name}'.strip()
+
+
 class Hotel(models.Model):
     """Property managed by a single manager."""
 
@@ -43,6 +66,11 @@ class Hotel(models.Model):
         help_text='Street, area, or landmark (optional).',
     )
     description = models.TextField(blank=True)
+    amenities = models.ManyToManyField(
+        Amenity,
+        blank=True,
+        related_name='hotels',
+    )
     rating = models.DecimalField(
         max_digits=3,
         decimal_places=2,

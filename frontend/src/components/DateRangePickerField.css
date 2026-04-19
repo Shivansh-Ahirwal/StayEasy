@@ -26,7 +26,11 @@
   color: var(--text);
   background: var(--bg-white);
   cursor: pointer;
-  min-height: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  white-space: nowrap;
+  overflow: hidden;
 }
 
 .date-range-trigger:hover {
@@ -41,6 +45,9 @@
 .date-range-trigger__text {
   font-size: 0.9rem;
   font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* —— Calendar popover —— */

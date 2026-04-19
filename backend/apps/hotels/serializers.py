@@ -2,9 +2,15 @@
 
 from rest_framework import serializers
 
-from apps.hotels.models import Hotel, Room
+from apps.hotels.models import Amenity, Hotel, Room
 from apps.locations.models import City
 from apps.locations.serializers import CityListSerializer
+
+
+class AmenitySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Amenity
+        fields = ('id', 'name', 'icon', 'category')
 
 
 class RoomSerializer(serializers.ModelSerializer):
@@ -34,6 +40,8 @@ class HotelSerializer(serializers.ModelSerializer):
         write_only=True,
     )
     location = serializers.SerializerMethodField()
+    review_count = serializers.IntegerField(read_only=True, default=0)
+    amenities = AmenitySerializer(many=True, read_only=True)
 
     class Meta:
         model = Hotel
@@ -50,18 +58,22 @@ class HotelSerializer(serializers.ModelSerializer):
             'location',
             'description',
             'rating',
+            'review_count',
             'created_at',
             'rooms',
+            'amenities',
         )
         read_only_fields = (
             'manager',
             'rating',
+            'review_count',
             'created_at',
             'rooms',
             'location',
             'oyo_id',
             'latitude',
             'longitude',
+            'amenities',
         )
 
     def get_location(self, obj):
@@ -85,6 +97,7 @@ class HotelListSerializer(serializers.ModelSerializer):
         read_only=True,
         allow_null=True,
     )
+    review_count = serializers.IntegerField(read_only=True, default=0)
 
     class Meta:
         model = Hotel
@@ -99,6 +112,7 @@ class HotelListSerializer(serializers.ModelSerializer):
             'location',
             'description',
             'rating',
+            'review_count',
             'min_room_price',
             'created_at',
         )

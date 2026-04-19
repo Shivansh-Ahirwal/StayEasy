@@ -26,6 +26,18 @@ function ratingLabel(rating) {
   return 'Pleasant';
 }
 
+function formatRating(r) {
+  const n = parseFloat(Number(r).toFixed(1));
+  return Number.isInteger(n) ? String(n) : n.toFixed(1);
+}
+
+function formatCount(n) {
+  if (!n || n <= 0) return null;
+  if (n >= 1_000_000) return `${parseFloat((n / 1_000_000).toFixed(1))}M`;
+  if (n >= 1000) return `${parseFloat((n / 1000).toFixed(1))}k`;
+  return String(n);
+}
+
 function hotelGalleryUrls(id) {
   const main = `https://picsum.photos/seed/yoyo${id}/520/340`;
   const thumbs = [0, 1, 2, 3].map(
@@ -49,7 +61,7 @@ export default function SearchResultHotelCard({ hotel, stayQuery }) {
   const taxHint = price != null ? Math.round(price * 0.12) : null;
   const bookedN = 800 + (id % 2200);
   const rating = Number(hotel.rating) || 0;
-  const reviewsN = 120 + (id % 800);
+  const reviewsN = hotel.review_count ?? 0;
   const detailPath = `/hotels/${id}${stayQuery}`;
 
   return (
@@ -75,10 +87,13 @@ export default function SearchResultHotelCard({ hotel, stayQuery }) {
 
           <div className="sr-card__rating-row">
             <span className="sr-card__rating-badge">
-              {rating.toFixed(1)}
+              {formatRating(rating)}
             </span>
             <span className="sr-card__rating-text">
-              {reviewsN.toLocaleString('en-IN')}+ ratings · {ratingLabel(rating)}
+              {formatCount(reviewsN)
+                ? `(${formatCount(reviewsN)}) · `
+                : ''}
+              {ratingLabel(rating)}
             </span>
           </div>
 
