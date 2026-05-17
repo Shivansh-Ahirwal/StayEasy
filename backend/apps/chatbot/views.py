@@ -1,37 +1,23 @@
-"""Chatbot API — streams SSE tokens, runs tool-calling loop with Ollama."""
+"""Chatbot API — SSE streaming, proactive hotel search, ChatGPT proxy."""
 
 import json
+import re
 
 import requests
-from django.conf import settings
 from django.http import StreamingHttpResponse
 from rest_framework import permissions
 from rest_framework.views import APIView
 
-from .tools import TOOL_DEFINITIONS, execute_tool
+from .tools import execute_tool
 
-OLLAMA_URL = getattr(settings, 'OLLAMA_URL', 'http://localhost:11434')
-OLLAMA_MODEL = getattr(settings, 'OLLAMA_MODEL', 'llama3.2:3b')
-MAX_TOOL_ROUNDS = 4
-
-# Timeouts in seconds
-TOOL_TIMEOUT = 150
-STREAM_TIMEOUT = 180
-
-# Keep responses fast and grounded on CPU
-OLLAMA_OPTIONS = {
-    'temperature': 0.2,
-    'top_p': 0.85,
-    'num_predict': 500,   # fewer tokens = faster
-    'repeat_penalty': 1.1,
-    'num_ctx': 2048,      # biggest speed lever on CPU
-}
+CHATGPT_URL = 'http://192.168.1.3:5678/api/chat'
+CHAT_TIMEOUT = 60
 
 SYSTEM_PROMPT = """\
 You are the STAYEazy travel assistant. You ONLY answer questions about:
-- Hotels, stays, and accommodation (use search_hotels tool)
+- Hotels, stays, and accommodation
 - Travel destinations, trip itineraries, transport, weather,
-  local food, attractions (use search_web tool)
+  local food, attractions
 - Booking, pricing, or property-related enquiries on STAYEazy
 
 STRICT RULES:
@@ -40,131 +26,121 @@ STRICT RULES:
    "I can only help with travel and hotel-related questions. Ask me
    about destinations, hotels, or trip planning!"
    Do NOT attempt to answer off-topic questions under any circumstances.
-2. Never invent hotel names, prices, or ratings. Always call
-   search_hotels to get real data.
+2. Never invent hotel names, prices, or ratings. Use only hotel data
+   explicitly provided to you in [Context].
 3. When listing hotels always include: name as **[Name](hotel:ID)**,
    city, rating, and price per night.
-4. For itineraries provide a day-by-day plan with estimated costs
-   in INR.
-5. Be concise. Use bullet points. Keep answers under 400 words
-   unless planning a multi-day trip.
+4. For itineraries provide a day-by-day plan with estimated costs in INR.
+5. Be concise. Use bullet points. Keep answers under 400 words unless
+   planning a multi-day trip.
 6. Never discuss politics, coding, relationships, health, finance,
    or any non-travel topic.
 """
+
+# City names to detect hotel search intent
+_CITY_PATTERN = re.compile(
+    r'\b(goa|mumbai|delhi|bangalore|bengaluru|chennai|hyderabad|kolkata|'
+    r'jaipur|udaipur|manali|shimla|darjeeling|ooty|kerala|agra|varanasi|'
+    r'rishikesh|mussoorie|coorg|kashmir|ladakh|pune|ahmedabad|surat|'
+    r'kochi|thiruvananthapuram|indore|bhopal|lucknow|chandigarh|amritsar)\b',
+    re.IGNORECASE,
+)
+
+_HOTEL_KEYWORDS = {
+    'hotel', 'stay', 'room', 'accommodation', 'resort',
+    'hostel', 'lodge', 'inn', 'book', 'where to stay',
+}
 
 
 def _sse(event_type: str, data: dict) -> str:
     return f"data: {json.dumps({'type': event_type, **data})}\n\n"
 
 
-def _ollama_post(
-    messages: list,
-    stream: bool,
-    tools: list | None = None,
-) -> requests.Response:
-    payload = {
-        'model': OLLAMA_MODEL,
-        'messages': messages,
-        'stream': stream,
-        'options': OLLAMA_OPTIONS,
-    }
-    if tools:
-        payload['tools'] = tools
-    timeout = STREAM_TIMEOUT if stream else TOOL_TIMEOUT
-    return requests.post(
-        f'{OLLAMA_URL}/api/chat',
-        json=payload,
-        stream=stream,
-        timeout=timeout,
+def _call_chatgpt(prompt: str) -> str:
+    resp = requests.post(
+        CHATGPT_URL,
+        json={'prompt': prompt},
+        timeout=CHAT_TIMEOUT,
     )
+    resp.raise_for_status()
+    data = resp.json()
+    if not data.get('success', True):
+        raise RuntimeError(data.get('error', 'Unknown error from AI service'))
+    return data.get('response', '')
 
 
-def _stream_final_reply(messages: list):
-    """Generator: yields SSE token chunks from Ollama streaming."""
-    try:
-        resp = _ollama_post(messages, stream=True)
-        resp.raise_for_status()
-        for line in resp.iter_lines():
-            if not line:
-                continue
-            try:
-                chunk = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            token = chunk.get('message', {}).get('content', '')
-            if token:
-                yield _sse('token', {'content': token})
-            if chunk.get('done'):
-                yield _sse('done', {})
-                return
-    except requests.ConnectionError:
-        yield _sse(
-            'error',
-            {'message': 'Ollama is not reachable. Run: ollama serve'},
-        )
-    except requests.Timeout:
-        yield _sse(
-            'error',
-            {'message': 'Model took too long. Try a shorter question.'},
-        )
-    except Exception as e:
-        yield _sse('error', {'message': str(e)})
+def _build_prompt(messages: list, hotel_context: str = '') -> str:
+    lines = [SYSTEM_PROMPT]
+    if hotel_context:
+        lines.append(f'\n[Context — real hotel data for this query]\n{hotel_context}\n')
+    lines.append('\n[Conversation]')
+    for m in messages:
+        role = m.get('role', 'user')
+        content = m.get('content', '')
+        if role == 'user':
+            lines.append(f'User: {content}')
+        elif role == 'assistant':
+            lines.append(f'Assistant: {content}')
+    lines.append('Assistant:')
+    return '\n'.join(lines)
+
+
+def _hotel_search_args(messages: list) -> dict | None:
+    """Return search_hotels args if the latest user turn is hotel-related."""
+    last = next(
+        (m['content'] for m in reversed(messages) if m.get('role') == 'user'),
+        '',
+    )
+    lower = last.lower()
+
+    city_match = _CITY_PATTERN.search(lower)
+    is_hotel_query = any(kw in lower for kw in _HOTEL_KEYWORDS)
+
+    if not (city_match or is_hotel_query):
+        return None
+
+    args: dict = {'limit': 5}
+    if city_match:
+        args['city'] = city_match.group(0).title()
+
+    budget = re.search(r'under\s*₹?\s*(\d[\d,]*)', lower)
+    if budget:
+        args['budget_max'] = int(budget.group(1).replace(',', ''))
+
+    rating = re.search(r'(\d(?:\.\d)?)\s*star', lower)
+    if rating:
+        args['rating_min'] = float(rating.group(1))
+
+    return args
 
 
 def _chat_generator(user_messages: list):
-    full_messages = (
-        [{'role': 'system', 'content': SYSTEM_PROMPT}] + user_messages
-    )
-
     try:
-        # ── Tool-calling loop ──
-        for _ in range(MAX_TOOL_ROUNDS):
-            resp = _ollama_post(
-                full_messages, stream=False, tools=TOOL_DEFINITIONS,
-            )
-            resp.raise_for_status()
-            msg = resp.json().get('message', {})
-            tool_calls = msg.get('tool_calls') or []
+        hotel_context = ''
 
-            if not tool_calls:
-                break
+        search_args = _hotel_search_args(user_messages)
+        if search_args:
+            yield _sse('tool_start', {'tool': 'search_hotels'})
+            result = execute_tool('search_hotels', search_args)
+            yield _sse('tool_done', {'tool': 'search_hotels'})
+            hotels = result.get('hotels', [])
+            if hotels:
+                yield _sse('hotel_cards', {'hotels': hotels})
+                hotel_context = json.dumps(hotels, ensure_ascii=False, indent=2)
 
-            full_messages.append(msg)
-            for tc in tool_calls:
-                fn = tc.get('function', {})
-                name = fn.get('name', '')
-                args = fn.get('arguments', {})
-                yield _sse('tool_start', {'tool': name})
-                result = execute_tool(name, args)
-                yield _sse('tool_done', {'tool': name})
-                if name == 'search_hotels' and result.get('hotels'):
-                    yield _sse('hotel_cards', {'hotels': result['hotels']})
-                full_messages.append({
-                    'role': 'tool',
-                    'content': json.dumps(result, ensure_ascii=False),
-                })
+        prompt = _build_prompt(user_messages, hotel_context)
+        text = _call_chatgpt(prompt)
+
+        if text:
+            yield _sse('token', {'content': text})
+        yield _sse('done', {})
 
     except requests.ConnectionError:
-        yield _sse(
-            'error',
-            {'message': 'Ollama is not reachable. Run: ollama serve'},
-        )
-        return
+        yield _sse('error', {'message': 'AI service is not reachable. Check that the ChatGPT proxy is running on 192.168.1.3:5678.'})
     except requests.Timeout:
-        yield _sse(
-            'error',
-            {'message': (
-                'Model timed out during tool use. '
-                'Try a simpler question.'
-            )},
-        )
-        return
+        yield _sse('error', {'message': 'AI service took too long to respond. Try again.'})
     except Exception as e:
         yield _sse('error', {'message': str(e)})
-        return
-
-    # ── Streaming answer ──
-    yield from _stream_final_reply(full_messages)
 
 
 class ChatView(APIView):

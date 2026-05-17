@@ -58,6 +58,7 @@ export default function ListPropertyPage() {
   const [cityId, setCityId] = useState(null);
   const [cityLabel, setCityLabel] = useState('');
   const [showDropdown, setShowDropdown] = useState(false);
+  const [highlight, setHighlight] = useState(-1);
   const cityRef = useRef(null);
 
   // Step 2 — room fields
@@ -121,6 +122,7 @@ export default function ListPropertyPage() {
     setCityQuery(label);
     setShowDropdown(false);
     setCityResults([]);
+    setHighlight(-1);
   };
 
   const clearCity = () => {
@@ -129,6 +131,23 @@ export default function ListPropertyPage() {
     setCityQuery('');
     setCityResults([]);
     setShowDropdown(false);
+    setHighlight(-1);
+  };
+
+  const onCityKeyDown = (e) => {
+    if (!showDropdown || cityResults.length === 0) return;
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setHighlight((i) => (i + 1 >= cityResults.length ? 0 : i + 1));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setHighlight((i) => (i <= 0 ? cityResults.length - 1 : i - 1));
+    } else if (e.key === 'Escape') {
+      setShowDropdown(false); setHighlight(-1);
+    } else if (e.key === 'Enter' && highlight >= 0) {
+      e.preventDefault();
+      selectCity(cityResults[highlight]);
+    }
   };
 
   const createHotel = async (e) => {
@@ -277,15 +296,9 @@ export default function ListPropertyPage() {
                         id="lp-city"
                         className={`lp-input${cityId ? ' lp-input--locked' : ''}`}
                         value={cityQuery}
-                        onChange={(e) => {
-                          if (cityId) clearCity();
-                          setCityQuery(e.target.value);
-                        }}
-                        onFocus={() => {
-                          if (!cityId && cityQuery.trim().length >= 2 && cityResults.length > 0) {
-                            setShowDropdown(true);
-                          }
-                        }}
+                        onChange={(e) => { if (cityId) clearCity(); setCityQuery(e.target.value); setShowDropdown(true); }}
+                        onFocus={() => { if (!cityId && cityResults.length > 0) setShowDropdown(true); }}
+                        onKeyDown={onCityKeyDown}
                         placeholder="Type at least 2 letters…"
                         autoComplete="off"
                         aria-autocomplete="list"
@@ -302,40 +315,44 @@ export default function ListPropertyPage() {
                           ✕
                         </button>
                       )}
+
+                      {showDropdown && cityResults.length > 0 && !cityId && (
+                        <ul className="search-suggestions" role="listbox">
+                          <li className="search-suggestions__label" role="presentation">Cities</li>
+                          {cityResults.map((c, idx) => (
+                            <li key={c.id} role="presentation">
+                              <button
+                                type="button"
+                                role="option"
+                                aria-selected={highlight === idx}
+                                className={`search-suggestion${highlight === idx ? ' search-suggestion--active' : ''}`}
+                                onMouseEnter={() => setHighlight(idx)}
+                                onMouseDown={(e) => { e.preventDefault(); selectCity(c); }}
+                              >
+                                <span className="search-suggestion__tag">City</span>
+                                <span className="search-suggestion__primary">{c.name}</span>
+                                {c.country?.name && (
+                                  <div className="search-suggestion__secondary">{c.country.name}</div>
+                                )}
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+
+                      {showDropdown && !cityLoading && cityResults.length === 0 && cityQuery.trim().length >= 2 && !cityId && (
+                        <ul className="search-suggestions" role="listbox">
+                          <li className="search-suggestions__label" role="presentation">
+                            No cities found for &ldquo;{cityQuery}&rdquo;
+                          </li>
+                        </ul>
+                      )}
                     </div>
 
                     {cityId && (
                       <div className="lp-city-selected">
                         <span className="lp-city-selected__pin">📍</span>
                         {cityLabel}
-                      </div>
-                    )}
-
-                    {showDropdown && cityResults.length > 0 && !cityId && (
-                      <ul className="lp-city-dropdown" role="listbox">
-                        {cityResults.map((c) => (
-                          <li key={c.id} role="option">
-                            <button
-                              type="button"
-                              className="lp-city-option"
-                              onMouseDown={(e) => {
-                                e.preventDefault(); // prevent blur before click
-                                selectCity(c);
-                              }}
-                            >
-                              <span className="lp-city-option__name">{c.name}</span>
-                              {c.country?.name && (
-                                <span className="lp-city-option__country">{c.country.name}</span>
-                              )}
-                            </button>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-
-                    {showDropdown && !cityLoading && cityResults.length === 0 && cityQuery.trim().length >= 2 && !cityId && (
-                      <div className="lp-city-empty">
-                        No cities found for &ldquo;{cityQuery}&rdquo;
                       </div>
                     )}
                   </div>

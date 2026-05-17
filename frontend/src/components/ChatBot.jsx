@@ -442,7 +442,7 @@ export default function ChatBot() {
               ➤
             </button>
           </div>
-          <p className="cb-footer">Powered by Ollama · Runs locally</p>
+          <p className="cb-footer">Powered by ChatGPT</p>
         </div>
       )}
     </>
